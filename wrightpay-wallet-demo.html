@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WrightPay — Sprint 12 Wallet Demo</title>
+<style>
+:root{font-family:Inter,system-ui,sans-serif;color:#182230;background:#f3f6fa}
+*{box-sizing:border-box}body{margin:0}.wrap{max-width:1000px;margin:auto;padding:22px}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:20px}
+.brand{font-size:25px;font-weight:900;letter-spacing:-1px}.tag{font-size:12px;background:#e3edff;color:#24538b;padding:7px 10px;border-radius:999px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:16px}
+.card{background:#fff;border:1px solid #dbe3ed;border-radius:18px;padding:20px;box-shadow:0 7px 25px #1822300b}
+h1,h2{margin-top:0}h1{font-size:28px;letter-spacing:-1px}h2{font-size:19px}
+label{display:block;font-size:13px;font-weight:800;margin:12px 0 6px}
+input{width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:10px;font:inherit}
+button{border:0;border-radius:10px;padding:11px 14px;background:#155eef;color:#fff;font-weight:800;cursor:pointer}
+button.secondary{background:#e7eef8;color:#1e3a5f}.row{display:flex;flex-wrap:wrap;gap:9px;margin-top:15px}
+.muted{font-size:13px;line-height:1.5;color:#64748b}.balance{font-size:38px;font-weight:900;letter-spacing:-1px;margin:10px 0}
+.status{background:#f1f5f9;border-radius:10px;padding:10px;margin-top:12px;font-size:13px;white-space:pre-wrap}
+.notice{padding:11px;background:#fff7ed;border-left:4px solid #f59e0b;border-radius:7px;font-size:13px;line-height:1.5}
+.hidden{display:none}.transaction{border-top:1px solid #e5e7eb;padding:12px 0;font-size:13px}
+.transaction:first-child{border-top:0}.positive{color:#087443}.negative{color:#b42318}
+</style>
+</head>
+<body>
+<main class="wrap">
+<header><div class="brand">WrightPay</div><div class="tag">Sprint 12 · Demo Only</div></header>
+
+<section class="card" style="margin-bottom:16px">
+<h1>Demo wallet</h1>
+<p class="muted">Connected transfer and history interface. Use synthetic accounts only.</p>
+<div class="notice">No real money is involved. Do not enter real passwords or financial information.</div>
+<label for="apiBase">API base URL</label>
+<input id="apiBase" value="http://localhost:3000">
+</section>
+
+<section id="loginPanel" class="card">
+<h2>Sign in to your demo wallet</h2>
+<label for="identifier">Handle or email</label><input id="identifier">
+<label for="password">Password</label><input id="password" type="password">
+<div class="row"><button id="loginBtn">Login</button></div>
+<div id="loginStatus" class="status"></div>
+</section>
+
+<section id="walletPanel" class="hidden">
+<div class="grid">
+<section class="card">
+<h2>Balance</h2><div id="balance" class="balance">$0.00</div>
+<div id="identity" class="muted"></div>
+<div class="row"><button id="refreshBtn" class="secondary">Refresh</button><button id="logoutBtn">Logout</button></div>
+</section>
+
+<section class="card">
+<h2>Send demo money</h2>
+<label for="recipient">Recipient handle</label><input id="recipient" placeholder="friend_demo">
+<label for="amount">Amount in dollars</label><input id="amount" type="number" min="0.01" step="0.01" placeholder="2.50">
+<label for="note">Note</label><input id="note" maxlength="240" placeholder="Demo transfer">
+<div class="row"><button id="sendBtn">Send</button></div>
+<div id="sendStatus" class="status"></div>
+</section>
+</div>
+
+<section class="card" style="margin-top:16px">
+<h2>Transaction history</h2>
+<div id="history" class="muted">No transactions loaded.</div>
+</section>
+</section>
+</main>
+
+<script>
+let token = "";
+const $ = (id) => document.getElementById(id);
+const base = () => $("apiBase").value.trim().replace(/\/+$/, "");
+function show(id, message){$(id).textContent = message;}
+async function api(path, options = {}){
+  const headers = {"Content-Type":"application/json",...(options.headers || {})};
+  if(token) headers.Authorization = `Bearer ${token}`;
+  const response = await fetch(`${base()}${path}`, {...options,headers});
+  const body = await response.json().catch(()=>({}));
+  if(!response.ok) throw new Error(body.error || `Request failed (${response.status})`);
+  return body;
+}
+function money(cents){return `$${(Number(cents || 0)/100).toFixed(2)}`;}
+function renderUser(user){
+  $("balance").textContent = money(user.balanceCents);
+  $("identity").textContent = `${user.displayName} · @${user.handle} · ${user.email}`;
+}
+async function refresh(){
+  const me = await api("/api/me");
+  renderUser(me.user);
+  const history = await api("/api/transactions?limit=50");
+  const items = history.transactions || [];
+  $("history").innerHTML = "";
+  if(!items.length){$("history").textContent = "No transactions yet.";return;}
+  for(const item of items){
+    const div = document.createElement("div");
+    div.className = "transaction";
+    div.textContent = JSON.stringify(item);
+    $("history").appendChild(div);
+  }
+}
+$("loginBtn").addEventListener("click", async()=>{
+  show("loginStatus","Signing in...");
+  try{
+    const result = await api("/api/login",{method:"POST",body:JSON.stringify({
+      identifier:$("identifier").value,password:$("password").value
+    })});
+    token = result.token;
+    $("loginPanel").classList.add("hidden");
+    $("walletPanel").classList.remove("hidden");
+    await refresh();
+    show("sendStatus","Signed in. Demo wallet ready.");
+  }catch(error){show("loginStatus",error.message);}
+});
+$("refreshBtn").addEventListener("click",async()=>{
+  try{await refresh();show("sendStatus","Wallet refreshed.");}
+  catch(error){show("sendStatus",error.message);}
+});
+$("sendBtn").addEventListener("click",async()=>{
+  const dollars = Number($("amount").value);
+  if(!Number.isFinite(dollars) || dollars <= 0){show("sendStatus","Enter a positive amount.");return;}
+  const cents = Math.round(dollars * 100);
+  show("sendStatus","Sending demo transfer...");
+  try{
+    const result = await api("/api/send",{method:"POST",body:JSON.stringify({
+      recipientHandle:$("recipient").value.trim(),
+      amountCents:cents,
+      note:$("note").value.trim(),
+      idempotencyKey: `ui-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    })});
+    show("sendStatus",`Transfer complete: ${JSON.stringify(result.transfer)}`);
+    await refresh();
+  }catch(error){show("sendStatus",error.message);}
+});
+$("logoutBtn").addEventListener("click",async()=>{
+  try{await api("/api/logout",{method:"POST"});}catch(error){show("sendStatus",error.message);}
+  token="";$("walletPanel").classList.add("hidden");$("loginPanel").classList.remove("hidden");
+});
+</script>
+</body>
+</html>
